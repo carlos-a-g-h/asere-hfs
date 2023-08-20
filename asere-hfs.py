@@ -184,7 +184,7 @@ def util_getposargs(data_raw):
 			break
 
 		new_key=data_ready[count-1].strip().lower()
-		if not new_key in ("--port","--workspace","--mainroot"):
+		if not new_key in ("--port","--slave","--master"):
 			continue
 
 		new_value=data_ready[count].strip()
@@ -211,7 +211,7 @@ def util_humanbytes(b):
 ################################################################################
 
 def fse_translate(fse,pname):
-	return _static_data["path_mainroot"].joinpath(fse.relative_to(Path(pname)))
+	return _static_data["path_masterdir"].joinpath(fse.relative_to(Path(pname)))
 
 def fse_validate(fse):
 
@@ -223,12 +223,12 @@ def fse_validate(fse):
 	if not fse_resolved.exists():
 		return None
 
-	the_mainroot=_static_data.get("path_mainroot")
-	the_workspace=_static_data.get("path_workspace")
+	the_masterdir=_static_data.get("path_masterdir")
+	the_slavedir=_static_data.get("path_slavedir")
 
-	valid=fse_resolved.is_relative_to(the_mainroot)
-	if (not valid) and (not the_workspace==None):
-		valid=fse_resolved.is_relative_to(the_workspace)
+	valid=fse_resolved.is_relative_to(the_masterdir)
+	if (not valid) and (not the_slavedir==None):
+		valid=fse_resolved.is_relative_to(the_slavedir)
 
 	if not valid:
 		return None
@@ -675,13 +675,13 @@ async def route_action(request):
 
 # https://stackoverflow.com/questions/34565705/asyncio-and-aiohttp-route-all-urls-paths-to-handler
 
-#async def app_builder(data_mainroot,data_workspace=None):
+#async def app_builder(data_masterdir,data_slavedir=None):
 async def app_builder():
 	app=web.Application()
 
-	#data_static={"path_mainroot":data_mainroot}
-	#if not data_workspace==None:
-	#	data_static.update({"path_workspace":})
+	#data_static={"path_masterdir":data_masterdir}
+	#if not data_slavedir==None:
+	#	data_static.update({"path_slavedir":})
 	#app.update({"data_static":data_static})
 
 	app.add_routes([
@@ -701,7 +701,7 @@ if __name__=="__main__":
  
 	no_args=len(sys.argv)==1
 	if no_args:
-		print(f"Usage:\n$ {sys.argv[0]} --port [NUMBER] --mainroot [PATH] --workspace [PATH]\n\nImportant:\nThe port and mainroot arguments are mandatory\nThe workspace argument is optional and in case of being used, it cannot be relative to the mainroot path\n\nCarlos Alberto González Hernández ({_date_version})")
+		print(f"Usage:\n$ {sys.argv[0]} --port [NUMBER] --master [PATH] --slave [PATH]\n\nImportant:\nThe port and master directory arguments are mandatory\nThe slave directory argument is optional and in case of being used, it cannot be relative to the master directory path\n\nCarlos Alberto González Hernández ({_date_version})")
 		sys.exit(0)
 
 	the_options=util_getposargs(sys.argv[1:])
@@ -722,52 +722,52 @@ if __name__=="__main__":
 	the_appdir=Path(sys.argv[0]).resolve().parent
 
 	# Arg: Main Root
-	the_mainroot_raw=the_options.get("--mainroot",None)
-	if the_mainroot_raw==None:
-		print("ERROR: The '--mainroot' argument is missing")
+	the_masterdir_raw=the_options.get("--master",None)
+	if the_masterdir_raw==None:
+		print("ERROR: The '--master' argument is missing")
 		sys.exit(1)
-	the_mainroot=Path(the_mainroot_raw.strip()).resolve()
-	if not str(the_mainroot).startswith("/"):
-		print("ERROR: The given path for the mainroot is not valid")
+	the_masterdir=Path(the_masterdir_raw.strip()).resolve()
+	if not str(the_masterdir).startswith("/"):
+		print("ERROR: The given path for the master directory is not valid")
 		sys.exit(1)
-	if not the_mainroot.exists():
-		print("ERROR: The given path for the mainroot does not exist")
+	if not the_masterdir.exists():
+		print("ERROR: The given path for the master directory does not exist")
 		sys.exit(1)
-	if not the_mainroot.is_dir():
-		print("ERROR: The given path for the mainroot is not a directory")
+	if not the_masterdir.is_dir():
+		print("ERROR: The given path for the master directory is not a directory")
 		sys.exit(1)
-	if the_appdir.is_relative_to(the_mainroot):
-		print("ERROR: The given path for the mainroot cannot contain the main program")
+	if the_appdir.is_relative_to(the_masterdir):
+		print("ERROR: The given path for the master directory cannot contain the main program")
 		sys.exit(1)
 
-	_static_data.update({"path_mainroot":the_mainroot})
+	_static_data.update({"path_masterdir":the_masterdir})
 
-	# Arg: Workspace (optional)
-	the_workspace=None
-	the_workspace_raw=the_options.get("--workspace",None)
-	if not the_workspace_raw==None:
-		the_workspace=Path(the_workspace_raw.strip()).resolve()
-		if not str(the_workspace).startswith("/"):
-			print("ERROR: The given path for the workspace is not valid")
+	# Arg: slave directory (optional)
+	the_slavedir=None
+	the_slavedir_raw=the_options.get("--slave",None)
+	if not the_slavedir_raw==None:
+		the_slavedir=Path(the_slavedir_raw.strip()).resolve()
+		if not str(the_slavedir).startswith("/"):
+			print("ERROR: The given path for the slave directory is not valid")
 			sys.exit(1)
-		if not the_workspace.exists():
-			print("ERROR: The given path for the workspace does not exist")
+		if not the_slavedir.exists():
+			print("ERROR: The given path for the slave directory does not exist")
 			sys.exit(1)
-		if not the_workspace.is_dir():
-			print("ERROR: The given path for the workspace is not a directory")
+		if not the_slavedir.is_dir():
+			print("ERROR: The given path for the slave directory is not a directory")
 			sys.exit(1)
-		if the_workspace.is_relative_to(the_mainroot):
-			print("ERROR: The given path for the workspace cannot be relative to the main root")
+		if the_slavedir.is_relative_to(the_masterdir):
+			print("ERROR: The given path for the slave directory cannot be relative to the main root")
 			sys.exit(1)
-		if the_appdir.is_relative_to(the_workspace):
-			print("ERROR: The given path for the workspace cannot contain the main program")
+		if the_appdir.is_relative_to(the_slavedir):
+			print("ERROR: The given path for the slave directory cannot contain the main program")
 			sys.exit(1)
 
-		_static_data.update({"path_workspace":the_workspace})
+		_static_data.update({"path_slavedir":the_slavedir})
 
-	msg=f"Asere HTTP File Server\n\tMain Root:\n\t\t{the_mainroot}"
-	if not the_workspace==None:
-		msg=f"{msg}\n\tWorkspace:\n\t\t{the_workspace}"
+	msg=f"Asere HTTP File Server\n\tMaster directory:\n\t\t{the_masterdir}"
+	if not the_slavedir==None:
+		msg=f"{msg}\n\tSlave directory:\n\t\t{the_slavedir}"
 
 	print(f"\n{msg}\n")
 
