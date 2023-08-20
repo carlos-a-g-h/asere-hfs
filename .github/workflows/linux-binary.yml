@@ -1,0 +1,66 @@
+name: Create release and build only for Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      TAGNAME:
+        description: "Tag Name (Version)"
+        required: True
+        type: string
+        default: test
+
+env:
+  FILE_REQ: "requirements.txt"
+  FILE_PY: "asere-hfs.py"
+  NAME_LINUX: "asere-hfs.amd64"
+
+jobs:
+  the-job:
+    name: The Job
+    runs-on: ubuntu-20.04
+
+    steps:
+
+    - name: Pull the repo
+      uses: actions/checkout@v3
+
+    - name: Pull the repo
+      uses: actions/checkout@v3
+
+    - name: Setup Python (1)
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.9.6"
+    - name: Setup Python (2)
+      run: |
+        pip install -r "${{ env.FILE_REQ }}"
+
+    - name: Build binary with Nuitka
+      run: |
+        pip install nuitka
+        python -m nuitka --onefile "${{ env.FILE_PY }}" -o "${{ env.NAME_LINUX }}"
+
+    - name: Make sure that the file exist
+      run: |
+        ls -l "${{ env.NAME_LINUX }}"
+
+    - name: Create release
+      id: CreateRelease
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      with:
+        tag_name: "${{ inputs.TAGNAME }}"
+        release_name: "${{ inputs.TAGNAME }}"
+        draft: false
+        prerelease: false
+
+    - name: Upload the executable binary as an asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      with:
+        upload_url: ${{ steps.CreateRelease.outputs.upload_url }}
+        asset_path: "${{ env.NAME_LINUX }}"
+        asset_name: "${{ env.NAME_LINUX }}"
+        asset_content_type: application/octet-stream
