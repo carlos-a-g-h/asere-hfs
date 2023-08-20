@@ -294,13 +294,19 @@ def html_info_file(fse_serverside,yurl):
 
 	yurl_path=Path(yurl.path)
 
-	size=fse_serverside.stat().st_size
+	fse_size=fse_serverside.stat().st_size
+
+	fse_suffix=fse_serverside.suffix.lower()[1:]
+	is_audio=(fse_size>1024 and fse_suffix in ("aac","m4a","mp3","ogg","wav"))
+	is_picture=(fse_size>1024 and fse_suffix in ("bmp","gif","jpg","jpeg","png","webp"))
+	is_video=(fse_size>1024 and fse_suffix in ("mp4","webm"))
+	is_regular=(is_audio==False and is_picture==False and is_video==False)
 
 	# Determine next or prev files in parent dir
 
 	name_prev,name_next=fse_surroundings(fse_serverside)
 
-	html_text="<body>\n<h1>File info</h1>"
+	html_text="<body>\n<h1>File viewer</h1>"
 	html_text=f"{html_text}{html_info_topctl(yurl_path)}"
 
 	can_nav=((not name_prev==None) or (not name_next==None))
@@ -323,48 +329,53 @@ def html_info_file(fse_serverside,yurl):
 
 		html_text=f"{html_text}\n</div>"
 
-	type_found=False
-	if size>1024:
-		sfx=fse_serverside.suffix.lower()[1:]
+	html_text=f"{html_text}\n<h2>"
+	if is_audio:
+		html_text=f"{html_text}Audio"
+	if is_picture:
+		html_text=f"{html_text}Picture"
+	if is_video:
+		html_text=f"{html_text}Video"
+	if is_regular:
+		html_text=f"{html_text}File"
+	html_text=f"{html_text}</h2>"
 
-		if sfx in ("bmp","gif","jpg","jpeg","png","webp"):
-			type_found=True
-
-			html_text=f"{html_text}\n<h2>Picture</h2>"
-			html_text=f"{html_text}\n<div id=\"mediacontent\"><img src=\"{convert_link(yurl_path)}\"></div>"
-
-		if sfx in ("aac","m4a","mp3","ogg","wav"):
-			type_found=True
-
-			mimetype={
-				"mp3":"audio/mpeg",
-				"m4a":"audio/mp4",
-				"aac":f"audio/{sfx}",
-				"ogg":f"audio/{sfx}",
-				"wav":f"audio/{sfx}",
-			}[sfx]
-
-			html_text=f"{html_text}\n<h2>Audio</h2>"
-			html_text=f"{html_text}\n<p><audio controls><source src=\"{convert_link(yurl_path)}\" type=\"{mimetype}\"></audio></p>"
-
-		if sfx in ("mp4","webm"):
-			type_found=True
-			mimetype={
-				"mp4":f"video/{sfx}",
-				"webm":f"video/{sfx}",
-			}[sfx]
-
-			html_text=f"{html_text}\n<h2>Video</h2>"
-			html_text=f"{html_text}\n<div id=\"mediacontent\"><video controls>"
-			html_text=f"{html_text}\n<source src=\"{convert_link(yurl_path)}\" type=\"{mimetype}\"></video></div>"
-
-	if not type_found:
-		html_text=f"{html_text}\n<h2>Normal file</h2>"
-
-	html_text=f"{html_text}\n<p>{util_humanbytes(size)}"
-	if size>1024:
-		html_text=f"{html_text} ( {size} bytes )"
+	html_text=f"{html_text}\n<p>{util_humanbytes(fse_size)}"
+	if fse_size>1024:
+		html_text=f"{html_text} ( {fse_size} bytes )"
 	html_text=f"{html_text}</p>"
+
+	if is_audio:
+		mimetype={
+			"mp3":"audio/mpeg",
+			"m4a":"audio/mp4",
+			"aac":f"audio/{fse_suffix}",
+			"ogg":f"audio/{fse_suffix}",
+			"wav":f"audio/{fse_suffix}",
+		}[fse_suffix]
+		html_text=f"{html_text}\n<div><audio controls><source src=\"{convert_link(yurl_path)}\" type=\"{mimetype}\"></audio></div>"
+
+	if is_picture:
+		html_text=f"{html_text}\n<div id=\"mediacontent\"><img src=\"{convert_link(yurl_path)}\"></div>"
+
+	if is_video:
+		type_found=True
+		mimetype={
+			"mp4":f"video/{fse_suffix}",
+			"webm":f"video/{fse_suffix}",
+		}[fse_suffix]
+		html_text=f"{html_text}\n<div id=\"mediacontent\"><video controls>"
+		html_text=f"{html_text}\n<source src=\"{convert_link(yurl_path)}\" type=\"{mimetype}\"></video></div>"
+
+	#################################
+
+	#if not type_found:
+	#	html_text=f"{html_text}\n<h2>Normal file</h2>"
+	#
+	#html_text=f"{html_text}\n<p>{util_humanbytes(size)}"
+	#if size>1024:
+	#	html_text=f"{html_text} ( {size} bytes )"
+	#html_text=f"{html_text}</p>"
 
 	html_text=f"{html_text}\n<p><textarea readonly=true>{get_homepage(yurl)}{convert_link(yurl_path)}</textarea></p>"
 
