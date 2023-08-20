@@ -234,6 +234,9 @@ def fse_validate(fse):
 
 	return fse_resolved
 
+def fse_isav(fse):
+	return (fse.suffix[1:] in ("ac3","aac","av1","avi","flac","m4a","mkv","mp4","mpg","ogg","rm","rmvb","wav","webm","wma","wmv"))
+
 def fse_surroundings(fse_given):
 	names_list=[]
 	for fse in fse_given.parent.iterdir():
@@ -281,7 +284,7 @@ def html_info_topctl(ypath):
 	text="\n<h3>"+str(Path("/").joinpath(ypath.relative_to("/info/")))+"</h3>\n<p>"
 
 	if len(ypath.parent.parts)>1:
-		text=f"{text}<a class=\"menu\" href=\"{str(ypath.parent)}\">⬆️ Go parent directory</a> "
+		text=f"{text}<a class=\"menu\" href=\"{str(ypath.parent)}\">⬆️ Go to parent directory</a> "
 
 	text=f"{text}<a class=\"menu\" href=\"/\">🏠 Go home</a></p>"
 
@@ -385,6 +388,7 @@ def html_info_dir(fse_serverside,yurl_path):
 	fse_list.sort()
 
 	files_qtty=0
+	files_qtty_av=0
 	files_tsize=0
 
 	while True:
@@ -394,6 +398,8 @@ def html_info_dir(fse_serverside,yurl_path):
 
 		if is_file:
 			files_qtty=files_qtty+1
+			if fse_isav(fse_curr):
+				files_qtty_av=files_qtty_av+1
 
 		yurl_path_info=yurl_path.joinpath(fse_curr.name)
 
@@ -439,15 +445,33 @@ def html_info_dir(fse_serverside,yurl_path):
 		html_text=f"{html_text}\n<p>\n<table><th>Name</th><th>Size</th>{html_text_files}</table></p>"
 
 	if files_qtty>1:
+
+		html_text=f"{html_text}\n<h2>Available actions</h2>"
+
+		# Normal TXT
+
 		link_action_txt=str(Path("/action/make-txt/").joinpath(path_neutral))
 		if not link_action_txt.endswith("/"):
 			link_action_txt=f"{link_action_txt}/"
+
+		html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{link_action_txt}\">Download TXT file</a></p>"
+
+		# IDM compatible TXT
 
 		link_action_txt_idm=str(Path("/action/make-txt-idm/").joinpath(path_neutral))
 		if not link_action_txt_idm.endswith("/"):
 			link_action_txt_idm=f"{link_action_txt_idm}/"
 
-		html_text=f"{html_text}\n<h2>Available actions</h2>\n<p><a class=\"menu\" href=\"{link_action_txt}\">Download TXT file</a></p>\n<p><a class=\"menu\" href=\"{link_action_txt_idm}\">Download IDM compatible TXT file</a></p>"
+		html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{link_action_txt_idm}\">Download TXT for IDM</a></p>"
+
+		# M3U Playlist
+
+		if files_qtty_av>1:
+			link_action_m3u=str(Path("/action/make-m3u/").joinpath(path_neutral))
+			if not link_action_m3u.endswith("/"):
+				link_action_m3u=f"{link_action_m3u}/"
+
+			html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{link_action_m3u}\">Download M3U Playlist</a></p>"
 
 	return f"{html_text}\n</body>"
 
@@ -470,11 +494,15 @@ def html_error(message):
 
 ###############################################################################
 
-def action_txtmaker(yurl,fse_neutral,fse_given,for_idm):
+def action_txtmaker(yurl,fse_neutral,fse_given,atype=0):
 	fse_list=[]
 	for fse in fse_given.iterdir():
 		if not fse.is_file():
 			continue
+		if atype==2:
+			if not fse_isav(fse):
+				continue
+
 		fse_list.append(fse)
 
 	if len(fse_list)<2:
@@ -493,7 +521,7 @@ def action_txtmaker(yurl,fse_neutral,fse_given,for_idm):
 		url_path=uquote(f"{url_path_base}{fse.name}")
 		url=f"{url_home}{url_path}"
 		txt=f"{txt}\n{url}"
-		if for_idm:
+		if atype==1:
 			txt=f"{txt}\t{fse.name}"
 
 	return txt.strip()
@@ -589,24 +617,37 @@ async def route_action(request):
 			fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
 
 	if not fse_serverside:
+		pattern="/action/make-m3u/"
+		if yurl.path.startswith(pattern):
+			fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
+
+	if not fse_serverside:
 		return web.Response(body=html_error("The path does not exist","???"),content_type="text/html",charset="utf-8",status=404)
 
-	if pattern in ("/action/make-txt/","/action/make-txt-idm/"):
+	if pattern in ("/action/make-txt/","/action/make-txt-idm/","/action/make-m3u/"):
 		if not fse_serverside.is_dir():
 			return web.Response(body=html_error("The path is not a directory","???"),content_type="text/html",charset="utf-8",status=403)
 
-	if pattern in ("/action/make-txt/","/action/make-txt-idm/"):
-		for_idm=(pattern=="/action/make-txt-idm/")
+	if pattern in ("/action/make-txt/","/action/make-txt-idm/","/action/make-m3u/"):
+
+		action_type={
+			"/action/make-txt/":0,
+			"/action/make-txt-idm/":1,
+			"/action/make-m3u/":2,
+		}[pattern]
+
 		fse_neutral=yurl_path.relative_to(pattern)
-		txt=action_txtmaker(yurl,fse_neutral,fse_serverside,for_idm)
+		txt=action_txtmaker(yurl,fse_neutral,fse_serverside,action_type)
 		if not txt:
 			return web.Response(body=html_error("Unable to create the TXT","???"),content_type="text/html",charset="utf-8",status=404)
 
-		txt_stem=str(fse_neutral.name)
-		if len(txt_stem)==0:
-			txt_stem=f"{yurl.host} {util_dtnow()}"
+		file_stem=str(fse_neutral.name)
+		if len(file_stem)==0:
+			file_stem=f"{yurl.host} {util_dtnow()}"
 
-		content_disposition=f"attachment; filename=\"{txt_stem}.txt\""
+		file_sfx={True:"m3u",False:"txt"}[action_type==2]
+
+		content_disposition=f"attachment; filename=\"{file_stem}.{file_sfx}\""
 
 		return web.Response(text=txt,headers={"content-disposition":content_disposition},content_type="text/plain",status=200)
 
@@ -614,15 +655,23 @@ async def route_action(request):
 
 # https://stackoverflow.com/questions/34565705/asyncio-and-aiohttp-route-all-urls-paths-to-handler
 
+#async def app_builder(data_mainroot,data_workspace=None):
 async def app_builder():
 	app=web.Application()
+
+	#data_static={"path_mainroot":data_mainroot}
+	#if not data_workspace==None:
+	#	data_static.update({"path_workspace":})
+	#app.update({"data_static":data_static})
+
 	app.add_routes([
 		web.get("/",route_home),
-		web.get("/info",route_info),
-		web.get("/info/{tail:.*}",route_info),
+		web.get("/action/make-m3u/{tail:.*}",route_action),
 		web.get("/action/make-txt/{tail:.*}",route_action),
 		web.get("/action/make-txt-idm/{tail:.*}",route_action),
 		web.get("/download/{tail:.*}",route_download),
+		web.get("/info",route_info),
+		web.get("/info/{tail:.*}",route_info),
 	])
 	return app
 
@@ -672,7 +721,6 @@ if __name__=="__main__":
 		sys.exit(1)
 
 	_static_data.update({
-		"path_appdir":the_appdir,
 		"path_mainroot":the_mainroot
 	})
 
@@ -697,6 +745,8 @@ if __name__=="__main__":
 			sys.exit(1)
 
 		_static_data.update({"path_workspace":the_workspace})
+
+	print("Running: 'Asere HTTP File Server'")
 
 	# Run app
 	web.run_app(app_builder(),port=the_port)
