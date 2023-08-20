@@ -244,7 +244,7 @@ def fse_surroundings(fse_given):
 			continue
 		names_list.append(fse.name)
 
-	if len(names_list)==1:
+	if len(names_list)<2:
 		return None,None
 
 	names_list.sort()
