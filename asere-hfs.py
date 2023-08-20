@@ -122,11 +122,12 @@ a.fse {color:#00BFFF;background-color:transparent;border:transparent;text-align:
 a.fse:hover {color:white}
 */
 
-textarea {background-color:#25292B;color:white;border:2px solid black;min-width:100%;max-width:100%;min-height:20%;min-height:128px;max-height:128px;font-size:inherit;}
+textarea {margin:8px;background-color:#25292B;color:white;border:2px solid black;min-width:calc(100% - 16px);max-width:100%;min-height:20%;min-height:128px;max-height:128px;font-size:inherit;}
 
-#mediacontent {background-color:black;max-width:100%;max-height:100%;display:block;text-align:center;}
-img {max-width:inherit;}
-audio {max-width:100%;min-width:100%;}
+#mediacontent {background-color:black;max-width:100%;display:block;text-align:center;}
+
+audio {margin:8px;max-width:calc(100% - 16px);min-width:calc(100% - 16px);}
+video,img {margin:4px;width:auto}
 """
 
 ###############################################################################
@@ -302,6 +303,8 @@ def html_info_file(fse_serverside,yurl):
 	is_video=(fse_size>1024 and fse_suffix in ("mp4","webm"))
 	is_regular=(is_audio==False and is_picture==False and is_video==False)
 
+	download_link=convert_link(yurl_path)
+
 	# Determine next or prev files in parent dir
 
 	name_prev,name_next=fse_surroundings(fse_serverside)
@@ -345,6 +348,9 @@ def html_info_file(fse_serverside,yurl):
 		html_text=f"{html_text} ( {fse_size} bytes )"
 	html_text=f"{html_text}</p>"
 
+	if not is_regular:
+		html_text=f"{html_text}\n<div id=\"mediacontent\">"
+
 	if is_audio:
 		mimetype={
 			"mp3":"audio/mpeg",
@@ -353,10 +359,10 @@ def html_info_file(fse_serverside,yurl):
 			"ogg":f"audio/{fse_suffix}",
 			"wav":f"audio/{fse_suffix}",
 		}[fse_suffix]
-		html_text=f"{html_text}\n<div><audio controls><source src=\"{convert_link(yurl_path)}\" type=\"{mimetype}\"></audio></div>"
+		html_text=f"{html_text}\n<audio controls><source src=\"{download_link}\" type=\"{mimetype}\"></audio>"
 
 	if is_picture:
-		html_text=f"{html_text}\n<div id=\"mediacontent\"><img src=\"{convert_link(yurl_path)}\"></div>"
+		html_text=f"{html_text}\n<img src=\"{download_link}\">"
 
 	if is_video:
 		type_found=True
@@ -364,8 +370,11 @@ def html_info_file(fse_serverside,yurl):
 			"mp4":f"video/{fse_suffix}",
 			"webm":f"video/{fse_suffix}",
 		}[fse_suffix]
-		html_text=f"{html_text}\n<div id=\"mediacontent\"><video controls>"
-		html_text=f"{html_text}\n<source src=\"{convert_link(yurl_path)}\" type=\"{mimetype}\"></video></div>"
+
+		html_text=f"{html_text}\n<video controls><source src=\"{download_link}\" type=\"{mimetype}\"></video>"
+
+	if not is_regular:
+		html_text=f"{html_text}\n</div>"
 
 	#################################
 
@@ -377,7 +386,7 @@ def html_info_file(fse_serverside,yurl):
 	#	html_text=f"{html_text} ( {size} bytes )"
 	#html_text=f"{html_text}</p>"
 
-	html_text=f"{html_text}\n<p><textarea readonly=true>{get_homepage(yurl)}{convert_link(yurl_path)}</textarea></p>"
+	html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{download_link}\">Download file</a></p>\n<p><textarea readonly=true>{get_homepage(yurl)}{download_link}</textarea></p>"
 
 	return f"{html_text}\n</body>"
 
