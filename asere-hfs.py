@@ -127,7 +127,7 @@ textarea {margin:8px;background-color:#25292B;color:white;border:2px solid black
 #mediacontent {background-color:black;max-width:100%;display:block;text-align:center;}
 
 audio {margin:8px;max-width:calc(100% - 16px);min-width:calc(100% - 16px);}
-video,img {margin:4px;width:auto;max-width:100%;}
+video,img {margin:4px;width:calc(auto - 16px);max-width:calc(100% - 16px)}
 """
 
 ###############################################################################
