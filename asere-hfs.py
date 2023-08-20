@@ -720,9 +720,7 @@ if __name__=="__main__":
 		print("ERROR: The given path for the mainroot cannot contain the main program")
 		sys.exit(1)
 
-	_static_data.update({
-		"path_mainroot":the_mainroot
-	})
+	_static_data.update({"path_mainroot":the_mainroot})
 
 	# Arg: Workspace (optional)
 	the_workspace_raw=the_options.get("--workspace",None)
