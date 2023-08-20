@@ -699,7 +699,7 @@ if __name__=="__main__":
 		print("ERROR: The given port is not valid. Make sure it's a number between 1 and 65536")
 		sys.exit(1)
 
-	the_appdir=Path(".").resolve()
+	the_appdir=Path(sys.argv[0]).resolve().parent
 
 	# Arg: Main Root
 	the_mainroot_raw=the_options.get("--mainroot",None)
@@ -723,6 +723,7 @@ if __name__=="__main__":
 	_static_data.update({"path_mainroot":the_mainroot})
 
 	# Arg: Workspace (optional)
+	the_workspace=None
 	the_workspace_raw=the_options.get("--workspace",None)
 	if not the_workspace_raw==None:
 		the_workspace=Path(the_workspace_raw.strip()).resolve()
@@ -735,16 +736,20 @@ if __name__=="__main__":
 		if not the_workspace.is_dir():
 			print("ERROR: The given path for the workspace is not a directory")
 			sys.exit(1)
-		if the_appdir.is_relative_to(the_mainroot):
-			print("ERROR: The given path for the workspace cannot contain the main program")
-			sys.exit(1)
 		if the_workspace.is_relative_to(the_mainroot):
 			print("ERROR: The given path for the workspace cannot be relative to the main root")
+			sys.exit(1)
+		if the_appdir.is_relative_to(the_workspace):
+			print("ERROR: The given path for the workspace cannot contain the main program")
 			sys.exit(1)
 
 		_static_data.update({"path_workspace":the_workspace})
 
-	print("Running: 'Asere HTTP File Server'")
+	msg=f"Asere HTTP File Server\n\tMain Root:\n\t\t{the_mainroot}"
+	if not the_workspace==None:
+		msg=f"{msg}\n\tWorkspace:\n\t\t{the_workspace}"
+
+	print(f"\n{msg}\n")
 
 	# Run app
 	web.run_app(app_builder(),port=the_port)
