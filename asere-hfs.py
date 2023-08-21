@@ -10,7 +10,7 @@ from aiohttp import web
 
 ###############################################################################
 
-_date_version="2023-08-20"
+_date_version="2023-08-21"
 
 _static_data={}
 
@@ -92,14 +92,10 @@ div.mainpage {margin-top:64px;text-align:center;}
 table {width:100%;text-align:left;}
 td,th {padding:8px;}
 th {background-color:#25292b;}
+th.namecol {min-width:auto}
+th.sizecol {min-width:auto;max-width:fit-content}
 tr:nth-child(even) {background-color: #33393B;}
 tr:nth-child(odd) {background-color: #515658;}
-
-/*
-button {background-color:#25292b;color:white;border:2px solid black;padding:2px 10px;margin-right:8px;text-align:center;text-decoration:none;display:inline-block;cursor:pointer;font-size:115%;}
-button:hover {background-color:#4682B4;}
-button:active {background-color:#00BFFF;color:black;}
-*/
 
 a {padding:8;background-color:transparent;font-weight:bold;}
 a:link {color:#00BFFF;text-decoration:none;}
@@ -111,7 +107,7 @@ a.button {background-color:#25292b;color:white;border:2px solid black;padding:2p
 a.button:hover {background-color:#4682B4;}
 a.button:active {background-color:#00BFFF;color:black;}
 
-a.menu {display:inline-block;border:2px solid black;color:#00BFFF;padding:8px;margin-left:8px;text-decoration: none;}
+a.menu {display:inline-block;border:2px solid black;color:#00BFFF;padding:8px;margin-left:8px;margin-bottom:4px;text-decoration: none;}
 a.menu:hover {background-color:#33393B;}
 a.menu:active {color:white;}
 
@@ -238,15 +234,17 @@ def fse_validate(fse):
 def fse_isav(fse):
 	return (fse.suffix[1:] in ("ac3","aac","av1","avi","flac","m4a","mkv","mp4","mpg","ogg","rm","rmvb","wav","webm","wma","wmv"))
 
-def fse_surroundings(fse_given):
+def fse_position(fse_given):
 	names_list=[]
 	for fse in fse_given.parent.iterdir():
 		if not fse.is_file():
 			continue
 		names_list.append(fse.name)
 
-	if len(names_list)<2:
-		return None,None
+	names_total=len(names_list)
+
+	if names_total<2:
+		return None,None,1,names_total
 
 	names_list.sort()
 	idx=0
@@ -262,12 +260,11 @@ def fse_surroundings(fse_given):
 			if idx<idx_last:
 				name_next=names_list[idx+1]
 
-		if (not name_prev==None) and (not name_next==None):
 			break
 
 		idx=idx+1
 
-	return name_prev,name_next
+	return name_prev,name_next,idx+1,names_total
 
 def convert_link(ypath_info,pname="/download"):
 	return str(Path(pname).joinpath(ypath_info.relative_to("/info/")))
@@ -307,7 +304,7 @@ def html_info_file(fse_serverside,yurl):
 
 	# Determine next or prev files in parent dir
 
-	name_prev,name_next=fse_surroundings(fse_serverside)
+	name_prev,name_next,position,total=fse_position(fse_serverside)
 
 	html_text="<body>\n<h1>File viewer</h1>"
 	html_text=f"{html_text}{html_info_topctl(yurl_path)}"
@@ -343,7 +340,12 @@ def html_info_file(fse_serverside,yurl):
 		html_text=f"{html_text}File"
 	html_text=f"{html_text}</h2>"
 
-	html_text=f"{html_text}\n<p>{util_humanbytes(fse_size)}"
+	html_text=f"{html_text}\n<p>"
+
+	if can_nav:
+		html_text=f"{html_text}No.: {position} / {total} ; "
+
+	html_text=f"{html_text}Size: {util_humanbytes(fse_size)}"
 	if fse_size>1024:
 		html_text=f"{html_text} ( {fse_size} bytes )"
 	html_text=f"{html_text}</p>"
@@ -400,15 +402,17 @@ def html_info_dir(fse_serverside,yurl_path):
 	fse_list=list(fse_serverside.iterdir())
 
 	if len(fse_list)==0:
-		return f"{html_text}\n<p>EMPTY</p></body>"
+		return f"{html_text}\n<h2 style=\"margin-left:8px\">Empty...</h2></body>"
 
 	html_text_dirs=""
 	html_text_files=""
 
 	fse_list.sort()
 
-	files_qtty=0
-	files_qtty_av=0
+	qtty_files=0
+	qtty_files_av=0
+	qtty_dirs=0
+
 	files_tsize=0
 
 	while True:
@@ -416,10 +420,13 @@ def html_info_dir(fse_serverside,yurl_path):
 
 		is_file=(fse_curr.is_file())
 
+		if not is_file:
+			qtty_dirs=qtty_dirs+1
+
 		if is_file:
-			files_qtty=files_qtty+1
+			qtty_files=qtty_files+1
 			if fse_isav(fse_curr):
-				files_qtty_av=files_qtty_av+1
+				qtty_files_av=qtty_files_av+1
 
 		yurl_path_info=yurl_path.joinpath(fse_curr.name)
 
@@ -455,18 +462,26 @@ def html_info_dir(fse_serverside,yurl_path):
 			break
 
 	if len(html_text_dirs)>0:
-		html_text=f"{html_text}\n<h2>Directories</h2>\n<p>\n<table><th>Name</th>{html_text_dirs}</table></p>"
+		html_text=f"{html_text}\n<p>\n<table><th>"+{
+			True:"Directory",
+			False:"Directories"
+		}[qtty_dirs==1]+f"</th>{html_text_dirs}</table></p>"
 
 	if len(html_text_files)>0:
-		html_text=f"{html_text}\n<h2>Files</h2>"
-		if files_qtty>1:
-			html_text=f"{html_text}\n<p>Total size: {util_humanbytes(files_tsize)}</p>"
+		# html_text=f"{html_text}\n<h2>Files</h2>"
 
-		html_text=f"{html_text}\n<p>\n<table><th>Name</th><th>Size</th>{html_text_files}</table></p>"
+		html_text=f"{html_text}\n<p>\n<table>"
 
-	if files_qtty>1:
+		if qtty_files==1:
+			html_text=f"{html_text}<th colspan=2>File</th>"
+		if qtty_files>1:
+			html_text=f"{html_text}<th class=\"namecol\">Files</th><th class=\"sizecol\">Total Size: {util_humanbytes(files_tsize)}</th>"
 
-		html_text=f"{html_text}\n<h2>Available actions</h2>"
+		html_text=f"{html_text}\n{html_text_files}</table></p>"
+
+	if qtty_files>1:
+
+		html_text=f"{html_text}\n<h2>Available actions</h2>\n<p>"
 
 		# Normal TXT
 
@@ -474,7 +489,7 @@ def html_info_dir(fse_serverside,yurl_path):
 		if not link_action_txt.endswith("/"):
 			link_action_txt=f"{link_action_txt}/"
 
-		html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{link_action_txt}\">Download TXT file</a></p>"
+		html_text=f"{html_text}\n<a class=\"menu\" href=\"{link_action_txt}\">Download TXT file</a> "
 
 		# IDM compatible TXT
 
@@ -482,16 +497,18 @@ def html_info_dir(fse_serverside,yurl_path):
 		if not link_action_txt_idm.endswith("/"):
 			link_action_txt_idm=f"{link_action_txt_idm}/"
 
-		html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{link_action_txt_idm}\">Download TXT for IDM</a></p>"
+		html_text=f"{html_text}\n<a class=\"menu\" href=\"{link_action_txt_idm}\">Download TXT for IDM</a> "
 
 		# M3U Playlist
 
-		if files_qtty_av>1:
+		if qtty_files_av>1:
 			link_action_m3u=str(Path("/action/make-m3u/").joinpath(path_neutral))
 			if not link_action_m3u.endswith("/"):
 				link_action_m3u=f"{link_action_m3u}/"
 
-			html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{link_action_m3u}\">Download M3U Playlist</a></p>"
+			html_text=f"{html_text}\n<a class=\"menu\" href=\"{link_action_m3u}\">Download M3U Playlist</a> "
+
+		html_text=f"{html_text.strip()}</p>"
 
 	return f"{html_text}\n</body>"
 
