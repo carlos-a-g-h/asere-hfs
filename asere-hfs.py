@@ -10,12 +10,51 @@ from aiohttp import web
 
 ###############################################################################
 
-_date_version="2023-08-21"
+_date_version="2023-08-23"
 
 _static_data={}
 
 _icon_dir="📂"
 _icon_file="📄"
+
+_help="""
+Server arguments:
+
+--port NUMBER
+	The port that the server will listen to
+
+--socket PATH
+	The UNIX socket that the server will listen to
+	Recommended for setting up behind a proxy
+
+--master PATH
+	Master path
+
+--slave PATH
+	Slave path
+	Any path that resolves outside of he master path should resolve to the slave path
+	Optional
+
+--proxy-appname STRING
+	Custom virtual host name
+	All the links at the frontend will be prefixed using this name
+	Optional, Used for setting up behind a proxy
+
+--proxy-static ABSOL_PATH
+	Custom absolute path for static content
+	The proxy server or any other web application will deliver the requested files
+	Optional
+	Requires '--proxy-appname' argument
+	Used for setting up behind a proxy
+
+Important notes:
+
+→ You can only listen to either a port or a socket, not both
+→ The slave directory cannot be relative to the master directory
+→ The path to the socket file cannot be relative to the master directory nor the slave directory
+→ The path to the socket file cannot exist before running the server, the program will create and delete the file on is own
+→ The directory of the program cannot be relative to the master directory nor the slave directory
+"""
 
 _html_home="""
 <body>
@@ -23,7 +62,7 @@ _html_home="""
 <h1>Asere HTTP File Server</h1>
 </div>
 <div class="mainpage">
-<h2><a href="/info/">Browse files</a></h2>
+<h2><a class="menu" href="REPLACE_ME">🔥 Browse files 🔥</a></h2>
 <div>
 <!--
 <div class="mainpage">
@@ -34,54 +73,7 @@ _html_home="""
 </body>
 """
 
-#_head_script="""
-#<script>
-#/*
-#function copylink(aid)
-#{
-#	let tag_a=document.getElementById(aid);
-#	let text=tag_a.href;
-#	navigator.clipboard.writeText(text);
-#	alert("Link copied:\n\n"+text);
-#};
-#*/
-#async function do_copy(text)
-#{
-#	let msg="";
-#	try
-#	{
-#		await navigator.clipboard.writeText(text);
-#		msg="Link copied:\n\n"+text;
-#	}
-#	catch (error)
-#	{
-#		msg="ERROR:\n\n"+String(error);
-#	};
-#	alert(msg);
-#};
-#window.onload=function init()
-#{
-#	let copy_buttons=document.getElementsByClassName("copy-link");
-#	let idx=0;
-#	while (idx<copy_buttons.length)
-#	{
-#		let elem=copy_buttons[idx];
-#		let copyfun=function ()
-#		{
-#			let elem_link=elem.parentNode.getElementsByClassName("fse-link")[0];
-#			if (elem_link===undefined){return};
-#			let text=elem_link.href;
-#			if (text===undefined){return};
-#			do_copy(text);
-#		};
-#		elem.addEventListener("click",copyfun);
-#		idx++;
-#	};
-#};
-#</script>
-#"""
-
-_head_css_basic="""
+_html_css="""
 h1 {font-size: calc(1vw + 1vh + .5vmin);}
 h2,th {font-size: calc(0.75vw + 1vh + .5vmin);}
 p,tr {font-size: calc(0.5vw + 1vh + .5vmin);}
@@ -164,33 +156,6 @@ def util_datafix(data_raw):
 
 	return data_ok
 
-def util_getposargs(data_raw):
-
-	data_ready=util_datafix(data_raw)
-	args_qtty=len(data_ready)
-
-	if (not util_ispair(args_qtty)) or args_qtty==0:
-		return {}
-
-	result={}
-	count=-1
-	while True:
-		count=count+2
-		if count>args_qtty:
-			break
-
-		new_key=data_ready[count-1].strip().lower()
-		if not new_key in ("--port","--slave","--master"):
-			continue
-
-		new_value=data_ready[count].strip()
-		if new_key in result:
-			continue
-
-		result.update({new_key:new_value})
-
-	return result
-
 def util_humanbytes(b):
 	u_kb=1024
 	u_mb=u_kb*u_kb
@@ -206,8 +171,8 @@ def util_humanbytes(b):
 
 ################################################################################
 
-def fse_translate(fse,pname):
-	return _static_data["path_masterdir"].joinpath(fse.relative_to(Path(pname)))
+def fse_translate(fse,path_frontend):
+	return _static_data["path_masterdir"].joinpath(fse.relative_to(Path(path_frontend)))
 
 def fse_validate(fse):
 
@@ -219,7 +184,7 @@ def fse_validate(fse):
 	if not fse_resolved.exists():
 		return None
 
-	the_masterdir=_static_data.get("path_masterdir")
+	the_masterdir=_static_data["path_masterdir"]
 	the_slavedir=_static_data.get("path_slavedir")
 
 	valid=fse_resolved.is_relative_to(the_masterdir)
@@ -266,10 +231,17 @@ def fse_position(fse_given):
 
 	return name_prev,name_next,idx+1,names_total
 
-def convert_link(ypath_info,pname="/download"):
-	return str(Path(pname).joinpath(ypath_info.relative_to("/info/")))
+def from_info_to_download(ypath_info,prefix_path_appname,custom_static):
 
-def get_homepage(yurl):
+	the_path={
+		True:Path(f"{prefix_path_appname}/download"),
+		False:custom_static
+	}[custom_static==None]
+
+	return str(the_path.joinpath(ypath_info.relative_to("/info/")))
+
+def from_yurl_to_home(yurl):
+
 	text=f"{yurl.scheme}://{yurl.host}"
 	if not (yurl.port==443 or yurl.port==80):
 		text=f"{text}:{yurl.port}"
@@ -277,18 +249,18 @@ def get_homepage(yurl):
 
 ###############################################################################
 
-def html_info_topctl(ypath):
+def html_info_topctl(ypath,prefix_path_appname):
 
-	text="\n<h3>"+str(Path("/").joinpath(ypath.relative_to("/info/")))+"</h3>\n<p>"
+	text="\n<h3>"+str(Path("/").joinpath(ypath.relative_to("/info/")))+f"</h3>\n<p>"
 
 	if len(ypath.parent.parts)>1:
-		text=f"{text}<a class=\"menu\" href=\"{str(ypath.parent)}\">⬆️ Go to parent directory</a> "
+		text=f"{text}<a class=\"menu\" href=\"{prefix_path_appname}{str(ypath.parent)}\">⬆️ Go to parent directory</a> "
 
-	text=f"{text}<a class=\"menu\" href=\"/\">🏠 Go home</a></p>"
+	text=f"{text}<a class=\"menu\" href=\"{prefix_path_appname}/\">🏠 Go home</a> <a class=\"menu\" href=\"{prefix_path_appname}{str(ypath)}\">🔁 Update page</a></p>"
 
 	return text
 
-def html_info_file(fse_serverside,yurl):
+def html_info_file(fse_serverside,yurl,prefix_path_appname):
 
 	yurl_path=Path(yurl.path)
 
@@ -300,14 +272,14 @@ def html_info_file(fse_serverside,yurl):
 	is_video=(fse_size>1024 and fse_suffix in ("mp4","webm"))
 	is_regular=(is_audio==False and is_picture==False and is_video==False)
 
-	download_link=convert_link(yurl_path)
+	download_link=from_info_to_download(yurl_path,prefix_path_appname,_static_data.get("proxy_static",None))
 
 	# Determine next or prev files in parent dir
 
 	name_prev,name_next,position,total=fse_position(fse_serverside)
 
 	html_text="<body>\n<h1>File viewer</h1>"
-	html_text=f"{html_text}{html_info_topctl(yurl_path)}"
+	html_text=f"{html_text}{html_info_topctl(yurl_path,prefix_path_appname)}"
 
 	can_nav=((not name_prev==None) or (not name_next==None))
 	if can_nav:
@@ -317,14 +289,14 @@ def html_info_file(fse_serverside,yurl):
 		the_class={True:"menuoff",False:"menu"}[name_prev==None]
 		the_href=""
 		if not name_prev==None:
-			the_href=f" href=\"{str(yurl_path.parent.joinpath(name_prev))}"
+			the_href=f" href=\"{prefix_path_appname}{str(yurl_path.parent.joinpath(name_prev))}"
 		html_text=f"{html_text}<a class=\"{the_class}\"{the_href}\">Prev file</a> "
 
 		# Next
 		the_class={True:"menuoff",False:"menu"}[name_next==None]
 		the_href=""
 		if not name_next==None:
-			the_href=f" href=\"{str(yurl_path.parent.joinpath(name_next))}"
+			the_href=f" href=\"{prefix_path_appname}{str(yurl_path.parent.joinpath(name_next))}"
 		html_text=f"{html_text}<a class=\"{the_class}\"{the_href}\">Next file</a>"
 
 		html_text=f"{html_text}\n</div>"
@@ -378,26 +350,16 @@ def html_info_file(fse_serverside,yurl):
 	if not is_regular:
 		html_text=f"{html_text}\n</div>"
 
-	#################################
-
-	#if not type_found:
-	#	html_text=f"{html_text}\n<h2>Normal file</h2>"
-	#
-	#html_text=f"{html_text}\n<p>{util_humanbytes(size)}"
-	#if size>1024:
-	#	html_text=f"{html_text} ( {size} bytes )"
-	#html_text=f"{html_text}</p>"
-
-	html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{download_link}\">Download file</a></p>\n<p><textarea readonly=true>{get_homepage(yurl)}{download_link}</textarea></p>"
+	html_text=f"{html_text}\n<p><a class=\"menu\" href=\"{download_link}\">Download file</a></p>\n<p><textarea readonly=true>{from_yurl_to_home(yurl)}{download_link}</textarea></p>"
 
 	return f"{html_text}\n</body>"
 
-def html_info_dir(fse_serverside,yurl_path):
+def html_info_dir(fse_serverside,yurl_path,prefix_path_appname):
 
 	path_neutral=yurl_path.relative_to("/info/")
 
 	html_text=f"<body>\n<h1>Directory contents</h1>"
-	html_text=f"{html_text}{html_info_topctl(yurl_path)}"
+	html_text=f"{html_text}{html_info_topctl(yurl_path,prefix_path_appname)}"
 
 	fse_list=list(fse_serverside.iterdir())
 
@@ -414,6 +376,8 @@ def html_info_dir(fse_serverside,yurl_path):
 	qtty_dirs=0
 
 	files_tsize=0
+
+	custom_static=_static_data.get("proxy_static",None)
 
 	while True:
 		fse_curr=fse_list.pop(0)
@@ -433,9 +397,9 @@ def html_info_dir(fse_serverside,yurl_path):
 		text=f"<tr><td><code>"
 
 		if is_file:
-			text=f"{text} <a class=\"button\" href=\"{convert_link(yurl_path_info)}\">⬇️</a> "
+			text=f"{text} <a class=\"button\" href=\"{from_info_to_download(yurl_path_info,prefix_path_appname,custom_static)}\">⬇️</a> "
 
-		text=f"{text}<a href=\"{str(yurl_path_info)}\">"+{True:_icon_file,False:_icon_dir}[is_file]+f" {yurl_path_info.name}</a></code></td>"
+		text=f"{text}<a href=\"{prefix_path_appname}{str(yurl_path_info)}\">"+{True:_icon_file,False:_icon_dir}[is_file]+f" {yurl_path_info.name}</a></code></td>"
 
 		if is_file:
 			fse_size=fse_curr.stat().st_size
@@ -489,7 +453,7 @@ def html_info_dir(fse_serverside,yurl_path):
 		if not link_action_txt.endswith("/"):
 			link_action_txt=f"{link_action_txt}/"
 
-		html_text=f"{html_text}\n<a class=\"menu\" href=\"{link_action_txt}\">Download TXT file</a> "
+		html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action_txt}\">Download TXT file</a> "
 
 		# IDM compatible TXT
 
@@ -497,7 +461,7 @@ def html_info_dir(fse_serverside,yurl_path):
 		if not link_action_txt_idm.endswith("/"):
 			link_action_txt_idm=f"{link_action_txt_idm}/"
 
-		html_text=f"{html_text}\n<a class=\"menu\" href=\"{link_action_txt_idm}\">Download TXT for IDM</a> "
+		html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action_txt_idm}\">Download TXT for IDM</a> "
 
 		# M3U Playlist
 
@@ -506,7 +470,7 @@ def html_info_dir(fse_serverside,yurl_path):
 			if not link_action_m3u.endswith("/"):
 				link_action_m3u=f"{link_action_m3u}/"
 
-			html_text=f"{html_text}\n<a class=\"menu\" href=\"{link_action_m3u}\">Download M3U Playlist</a> "
+			html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action_m3u}\">Download M3U Playlist</a> "
 
 		html_text=f"{html_text.strip()}</p>"
 
@@ -515,7 +479,7 @@ def html_info_dir(fse_serverside,yurl_path):
 def html_complete(html_body,html_title):
 	html_complete=f"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
 
-	html_complete=f"{html_complete}\n<style>{_head_css_basic}"
+	html_complete=f"{html_complete}\n<style>{_html_css}"
 
 	#if css_extra:
 	#	html_complete=f"{html_complete}{_head_css_extra}"
@@ -548,9 +512,18 @@ def action_txtmaker(yurl,fse_neutral,fse_given,atype=0):
 	fse_list.sort()
 	txt=""
 
-	url_home=get_homepage(yurl)
+	url_home=from_yurl_to_home(yurl)
 
-	url_path_base=str(Path("/download/").joinpath(fse_neutral))
+	proxy_appname=_static_data.get("proxy_appname",None)
+	proxy_static=_static_data.get("proxy_static",None)
+	prefix_path_appname={True:"",False:f"/{proxy_appname}"}[proxy_appname==None]
+
+	base_route={
+		True:Path(f"{prefix_path_appname}/download/"),
+		False:proxy_static,
+	}[proxy_static==None]
+
+	url_path_base=str(base_route.joinpath(fse_neutral))
 	if not url_path_base.endswith("/"):
 		url_path_base=f"{url_path_base}/"
 
@@ -566,11 +539,24 @@ def action_txtmaker(yurl,fse_neutral,fse_given,atype=0):
 ###############################################################################
 
 async def route_home(request):
-	return web.Response(body=html_complete(_html_home,"Home Page"),content_type="text/html",charset="utf-8",status=200)
+
+	proxy_appname=_static_data.get("proxy_appname",None)
+	path_root="/info/"
+	if not proxy_appname==None:
+		path_root=f"/{proxy_appname}/info/"
+
+	text=_html_home.replace("REPLACE_ME",path_root)
+
+	return web.Response(body=html_complete(text,"Home Page"),content_type="text/html",charset="utf-8",status=200)
 
 async def route_info(request):
+
 	yurl=request.url
 	yurl_path=Path(yurl.path)
+
+	proxy_appname=_static_data.get("proxy_appname",None)
+	prefix_path_appname={True:"",False:f"/{proxy_appname}"}[proxy_appname==None]
+
 	fse_serverside=fse_validate(fse_translate(yurl_path,"/info/"))
 
 	html_text=None
@@ -583,19 +569,19 @@ async def route_info(request):
 	if sc<0:
 		if fse_serverside.is_file():
 			sc=200
-			html_text=html_info_file(fse_serverside,yurl)
+			html_text=html_info_file(fse_serverside,yurl,prefix_path_appname)
 
 	if sc<0:
 		if fse_serverside.is_dir():
 			sc=200
-			html_text=html_info_dir(fse_serverside,yurl_path)
+			html_text=html_info_dir(fse_serverside,yurl_path,prefix_path_appname)
 
 	if sc<0:
 		if html_text==None:
 			sc=500
 			html_text=html_error("Unknown error")
 
-	path_show=yurl_path.relative_to("/info/").name
+	path_show=yurl_path.relative_to(f"/info/").name
 	if len(path_show)>0:
 		path_show=f" {path_show}"
 
@@ -604,6 +590,10 @@ async def route_info(request):
 async def route_download(request):
 	yurl=request.url
 	yurl_path=Path(yurl.path)
+
+	proxy_appname=_static_data.get("proxy_appname",None)
+	prefix_path_appname={True:"",False:f"/{proxy_appname}"}[proxy_appname==None]
+
 	fse_serverside=fse_validate(fse_translate(yurl_path,"/download/"))
 
 	html_text=None
@@ -691,25 +681,160 @@ async def route_action(request):
 ###############################################################################
 
 # https://stackoverflow.com/questions/34565705/asyncio-and-aiohttp-route-all-urls-paths-to-handler
+# https://dev.to/vearutop/using-nginx-as-a-proxy-to-multiple-unix-sockets-3c7a
 
-#async def app_builder(data_masterdir,data_slavedir=None):
-async def app_builder():
+def init_arguments(data_raw):
+
+	data_ready=util_datafix(data_raw)
+	args_qtty=len(data_ready)
+
+	if (not util_ispair(args_qtty)) or args_qtty==0:
+		return {}
+
+	result={}
+	count=-1
+	while True:
+		count=count+2
+		if count>args_qtty:
+			break
+
+		new_key=data_ready[count-1].strip().lower()
+		if not new_key in ("--socket","--port","--slave","--master","--proxy-appname","--proxy-static"):
+			continue
+
+		new_value=data_ready[count].strip()
+		if new_key in result:
+			continue
+
+		result.update({new_key:new_value})
+
+	return result
+
+def init_arg_AnyString(arg_raw):
+	if arg_raw==None:
+		return None
+
+	text=arg_raw.strip()
+	if len(text)==0:
+		return None
+
+	return text
+
+def init_arg_port(arg_raw):
+	if arg_raw==None:
+		return None,None
+
+	try:
+		value=int(arg_raw)
+	except:
+		return None,"The given port is not a number"
+
+	if not (value>0 and value<65537):
+		return None,"The port number is not valid"
+
+	return value,None
+
+def init_arg_socket(arg_raw,arg_port):
+	if arg_raw==None:
+		return None,None
+
+	if not arg_port==None:
+		return None,"Cannot use '--socket' with --port"
+
+	the_path=Path(arg_raw.strip()).resolve()
+
+	the_path.parent.mkdir(exist_ok=True,parents=True)
+
+	if the_path.exists():
+		return None,"Cannot use the specified file as the socket, delete it, move it somewhere else, etc..."
+
+	return the_path,None
+
+def init_arg_master(arg_raw,appdir,arg_socket):
+	if arg_raw==None:
+		return None,"Missing argument"
+
+	the_path=Path(arg_raw.strip()).resolve()
+	if (not str(the_path).startswith("/")) and len(the_path.parts)==0:
+		return None,"The given path is not valid"
+	if not the_path.exists():
+		return None,"The given path does not exist"
+	if not the_path.is_dir():
+		return None,"The given path is NOT a directory"
+	if len(the_path.parts)==1 and the_path.parts[1]=="/":
+		return None,"The given path cannot be '/'"
+	if appdir.is_relative_to(the_path):
+		return None,"The main program cannot be relative to the given path"
+	if not arg_socket==None:
+		if arg_socket.is_relative_to(the_path):
+			return None,"The path to the socket cannot be relative to the given path"
+
+	return the_path,None
+
+def init_arg_slave(arg_raw,appdir,arg_socket,arg_master):
+	if arg_raw==None:
+		return None,None
+	the_path=Path(arg_raw.strip()).resolve()
+	if (not str(the_path).startswith("/")) and len(the_path.parts)==0:
+		return None,"The given path is not valid"
+	if not the_path.exists():
+		return None,"The given path does not exist"
+	if not the_path.is_dir():
+		return None,"The given path is NOT a directory"
+	if len(the_path.parts)==1 and the_path.parts[1]=="/":
+		return None,"The given path cannot be '/'"
+	if appdir.is_relative_to(the_path):
+		return None,"The given path cannot be a parent of the path to the main program"
+	if the_path.is_relative_to(arg_master):
+		return None,"The given path cannot be relative to the master path"
+	if not arg_socket==None:
+		if arg_socket.is_relative_to(the_path):
+			return None,"The path to the socket cannot be relative to the given path"
+
+	return the_path,None
+
+def init_arg_abspath(arg_raw,proxy_appname):
+	if arg_raw==None:
+		return None,None
+
+	if proxy_appname==None:
+		return None,"The '--proxy-appname' argument is required"
+
+	the_path=Path(arg_raw)
+	if len(the_path.parts)<2:
+		return None,"The given path is not valid"
+
+	if not the_path.parts[0]=="/":
+		return None,"The given path is not an absolute path"
+
+	return the_path,None
+
+#async def init_app(data_masterdir,data_slavedir=None):
+async def init_app(independent):
+
 	app=web.Application()
 
-	#data_static={"path_masterdir":data_masterdir}
-	#if not data_slavedir==None:
-	#	data_static.update({"path_slavedir":})
-	#app.update({"data_static":data_static})
+	#app["path_masterdir"]=path_masterdir
+	#if not path_slavedir==None:
+	#	app["path_slavedir"]=path_slavedir
+	#if not proxy_appname==None:
+	#	app["proxy_appname"]=proxy_appname
+	#if not proxy_static==None:
+	#	app["proxy_static"]=proxy_static
 
-	app.add_routes([
+	the_routes=[
 		web.get("/",route_home),
+		web.get("/info",route_info),
+		web.get("/info/{tail:.*}",route_info),
 		web.get("/action/make-m3u/{tail:.*}",route_action),
 		web.get("/action/make-txt/{tail:.*}",route_action),
 		web.get("/action/make-txt-idm/{tail:.*}",route_action),
-		web.get("/download/{tail:.*}",route_download),
-		web.get("/info",route_info),
-		web.get("/info/{tail:.*}",route_info),
-	])
+	]
+
+	if independent:
+		the_routes.append(web.get("/download/{tail:.*}",route_download))
+
+	app.add_routes(the_routes)
 	return app
 
 if __name__=="__main__":
@@ -718,75 +843,87 @@ if __name__=="__main__":
  
 	no_args=len(sys.argv)==1
 	if no_args:
-		print(f"Usage:\n$ {sys.argv[0]} --port [NUMBER] --master [PATH] --slave [PATH]\n\nImportant:\nThe port and master directory arguments are mandatory\nThe slave directory argument is optional and in case of being used, it cannot be relative to the master directory path\n\nCarlos Alberto González Hernández ({_date_version})")
+		print(f"ASERE HFS\n{_help}\nWritten by Carlos Alberto González Hernández\nVer: {_date_version}")
 		sys.exit(0)
 
-	the_options=util_getposargs(sys.argv[1:])
+	the_arguments=init_arguments(sys.argv[1:])
 
 	# Arg: Port
-	the_port_raw=the_options.get("--port",None)
-	if the_port_raw==None:
-		print("ERROR: The '--port' argument is missing")
-		sys.exit(1)
-	the_port_raw=the_port_raw.strip()
-	try:
-		the_port=int(the_port_raw)
-		assert the_port>0 and the_port<65537
-	except:
-		print("ERROR: The given port is not valid. Make sure it's a number between 1 and 65536")
+	the_port,msg_err=init_arg_port(the_arguments.get("--port",None))
+	if not msg_err==None:
+		print(f"ERROR with --port: {msg_err}")
 		sys.exit(1)
 
 	the_appdir=Path(sys.argv[0]).resolve().parent
 
-	# Arg: Main Root
-	the_masterdir_raw=the_options.get("--master",None)
-	if the_masterdir_raw==None:
-		print("ERROR: The '--master' argument is missing")
-		sys.exit(1)
-	the_masterdir=Path(the_masterdir_raw.strip()).resolve()
-	if not str(the_masterdir).startswith("/"):
-		print("ERROR: The given path for the master directory is not valid")
-		sys.exit(1)
-	if not the_masterdir.exists():
-		print("ERROR: The given path for the master directory does not exist")
-		sys.exit(1)
-	if not the_masterdir.is_dir():
-		print("ERROR: The given path for the master directory is not a directory")
-		sys.exit(1)
-	if the_appdir.is_relative_to(the_masterdir):
-		print("ERROR: The given path for the master directory cannot contain the main program")
+	# Arg: Socket
+	the_socket,msg_err=init_arg_socket(the_arguments.get("--socket",None),the_port)
+	if not msg_err==None:
+		print(f"ERROR with --socket: {msg_err}")
 		sys.exit(1)
 
-	_static_data.update({"path_masterdir":the_masterdir})
+	if the_socket==None and the_port==None:
+		print("ERROR: The server must listen to a port or a socket")
+		sys.exit(1)
 
-	# Arg: slave directory (optional)
-	the_slavedir=None
-	the_slavedir_raw=the_options.get("--slave",None)
-	if not the_slavedir_raw==None:
-		the_slavedir=Path(the_slavedir_raw.strip()).resolve()
-		if not str(the_slavedir).startswith("/"):
-			print("ERROR: The given path for the slave directory is not valid")
-			sys.exit(1)
-		if not the_slavedir.exists():
-			print("ERROR: The given path for the slave directory does not exist")
-			sys.exit(1)
-		if not the_slavedir.is_dir():
-			print("ERROR: The given path for the slave directory is not a directory")
-			sys.exit(1)
-		if the_slavedir.is_relative_to(the_masterdir):
-			print("ERROR: The given path for the slave directory cannot be relative to the main root")
-			sys.exit(1)
-		if the_appdir.is_relative_to(the_slavedir):
-			print("ERROR: The given path for the slave directory cannot contain the main program")
-			sys.exit(1)
+	# Arg: Master
+	the_master,msg_err=init_arg_master(the_arguments.get("--master",None),the_appdir,the_socket)
+	if not msg_err==None:
+		print(f"ERROR with --master: {msg_err}")
+		sys.exit(1)
 
-		_static_data.update({"path_slavedir":the_slavedir})
+	# Arg: Slave
+	the_slave,msg_err=init_arg_slave(the_arguments.get("--slave",None),the_appdir,the_socket,the_master)
+	if not msg_err==None:
+		print(f"ERROR with --slave: {msg_err}")
+		sys.exit(1)
 
-	msg=f"Asere HTTP File Server\n\tMaster directory:\n\t\t{the_masterdir}"
-	if not the_slavedir==None:
-		msg=f"{msg}\n\tSlave directory:\n\t\t{the_slavedir}"
+	the_proxy_appname=init_arg_AnyString(the_arguments.get("--proxy-appname",None))
+
+	the_proxy_static,msg_err=init_arg_abspath(the_arguments.get("--proxy-static",None),the_proxy_appname)
+	if not msg_err==None:
+		print(f"ERROR with --proxy-static: {msg_err}")
+		sys.exit(1)
+
+	msg=f"Asere HTTP File Server\n\tMaster directory:\n\t\t{the_master}"
+	if not the_slave==None:
+		msg=f"{msg}\n\tSlave directory:\n\t\t{the_slave}"
+	if not the_socket==None:
+		msg=f"{msg}\n\tSocket file:\n\t\t{the_socket}"
 
 	print(f"\n{msg}\n")
 
+	# Adding to static data dict
+	_static_data.update({"path_masterdir":the_master})
+	if not the_slave==None:
+		_static_data.update({"path_slavedir":the_slave})
+	if not the_proxy_appname==None:
+		_static_data.update({"proxy_appname":the_proxy_appname})
+	if not the_proxy_static==None:
+		_static_data.update({"proxy_static":the_proxy_static})
+
+	independent=(the_proxy_static==None)
+
 	# Run app
-	web.run_app(app_builder(),port=the_port)
+	es=0
+	try:
+		web.run_app(init_app(independent),port=the_port,path=str(the_socket))
+	except Exception as e:
+		print(e)
+		es=1
+
+	if not es==0:
+		print("Finishing with non-zero status")
+
+	if the_socket==None:
+		sys.exit(es)
+
+	if not the_socket==None:
+		if the_socket.exists():
+			print("Deleting socket file...")
+			try:
+				the_socket.unlink()
+			except:
+				print("Unable to delete socket file for some reason\nDelete it yourself")
+
+	sys.exit(es)
