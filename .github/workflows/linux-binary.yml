@@ -64,3 +64,17 @@ jobs:
         asset_path: "${{ env.NAME_LINUX }}"
         asset_name: "${{ env.NAME_LINUX }}"
         asset_content_type: application/octet-stream
+
+    - name: Create examples.tar file
+      run: |
+        tar -cvf examples.tar examples
+
+    - name: Upload the examples.tar file as an asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      with:
+        upload_url: ${{ steps.CreateRelease.outputs.upload_url }}
+        asset_path: "examples.tar"
+        asset_name: "examples.tar"
+        asset_content_type: application/octet-stream
