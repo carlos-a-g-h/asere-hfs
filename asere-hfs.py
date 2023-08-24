@@ -912,9 +912,6 @@ if __name__=="__main__":
 		print(e)
 		es=1
 
-	if not es==0:
-		print("Finishing with non-zero status")
-
 	if the_socket==None:
 		sys.exit(es)
 
@@ -925,5 +922,8 @@ if __name__=="__main__":
 				the_socket.unlink()
 			except:
 				print("Unable to delete socket file for some reason\nDelete it yourself")
+
+	if not es==0:
+		print("AsereHFS finished with a non-zero status")
 
 	sys.exit(es)
