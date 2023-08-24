@@ -18,7 +18,7 @@ _icon_dir="📂"
 _icon_file="📄"
 
 _help="""
-Server arguments:
+Arguments:
 
 --port NUMBER
 	The port that the server will listen to
@@ -42,7 +42,7 @@ Server arguments:
 
 --proxy-static ABSOL_PATH
 	Custom absolute path for static content
-	The proxy server or any other web application will deliver the requested files
+	A different service will deliver the requested files to the client instead of AsereHFS
 	Optional
 	Requires '--proxy-appname' argument
 	Used for setting up behind a proxy
@@ -843,7 +843,7 @@ if __name__=="__main__":
  
 	no_args=len(sys.argv)==1
 	if no_args:
-		print(f"ASERE HFS\n{_help}\nWritten by Carlos Alberto González Hernández\nVer: {_date_version}")
+		print(f"\nAsere HTTP File Server\n{_help}\nWritten by Carlos Alberto González Hernández\nVer: {_date_version}\n")
 		sys.exit(0)
 
 	the_arguments=init_arguments(sys.argv[1:])
@@ -912,9 +912,6 @@ if __name__=="__main__":
 		print(e)
 		es=1
 
-	if not es==0:
-		print("Finishing with non-zero status")
-
 	if the_socket==None:
 		sys.exit(es)
 
@@ -925,5 +922,8 @@ if __name__=="__main__":
 				the_socket.unlink()
 			except:
 				print("Unable to delete socket file for some reason\nDelete it yourself")
+
+	if not es==0:
+		print("AsereHFS finished with a non-zero status")
 
 	sys.exit(es)

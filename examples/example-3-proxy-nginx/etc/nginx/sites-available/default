@@ -1,0 +1,23 @@
+server {
+  listen 80 default;
+  listen [::]:80;
+
+  # Fix for: Request Header Or Cookie Too Large
+  large_client_header_buffers 4 32k;
+
+  location /asere-hfs/ {
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_redirect off;
+    proxy_buffering off;
+    proxy_pass http://asere-hfs/;
+  }
+
+  location /served-by-nginx/ {
+    alias /var/www/html/files/;
+  }
+}
+
+upstream asere-hfs {
+  server unix:/var/run/asere-http-file-server.socket;
+}
