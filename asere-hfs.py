@@ -38,7 +38,8 @@ Arguments:
 --proxy-appname STRING
 	Custom virtual host name
 	All the links at the frontend will be prefixed using this name
-	Optional, Used for setting up behind a proxy
+	Optional
+	Used for setting up behind a proxy
 
 --proxy-static ABSOL_PATH
 	Custom absolute path for static content
@@ -256,7 +257,7 @@ def html_info_topctl(ypath,prefix_path_appname):
 	if len(ypath.parent.parts)>1:
 		text=f"{text}<a class=\"menu\" href=\"{prefix_path_appname}{str(ypath.parent)}\">⬆️ Go to parent directory</a> "
 
-	text=f"{text}<a class=\"menu\" href=\"{prefix_path_appname}/\">🏠 Go home</a> <a class=\"menu\" href=\"{prefix_path_appname}{str(ypath)}\">🔁 Update page</a></p>"
+	text=f"{text}<a class=\"menu\" href=\"{prefix_path_appname}/\">🏠 Go home</a> <a class=\"menu\" href=\"{prefix_path_appname}{str(ypath)}\">🔁 Refresh page</a></p>"
 
 	return text
 
@@ -904,10 +905,12 @@ if __name__=="__main__":
 
 	independent=(the_proxy_static==None)
 
+	the_socket_str={True:None,False:str(the_socket)}[the_socket==None]
+
 	# Run app
 	es=0
 	try:
-		web.run_app(init_app(independent),port=the_port,path=str(the_socket))
+		web.run_app(init_app(independent),port=the_port,path=the_socket_str)
 	except Exception as e:
 		print(e)
 		es=1
