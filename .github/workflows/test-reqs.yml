@@ -1,0 +1,30 @@
+name: Test requirements
+
+on:
+  workflow_dispatch:
+    # Button
+
+env:
+  FILE_REQ: "requirements.txt"
+
+jobs:
+  the-job:
+    name: The Job
+    runs-on: ubuntu-20.04
+
+    steps:
+
+    - name: Pull the repo
+      uses: actions/checkout@v3
+
+    - name: Setup Python (1)
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.9.6"
+    - name: Setup Python (2)
+      run: |
+        pip install -r "${{ env.FILE_REQ }}"
+
+    - name: The test
+      run: |
+        find ./|grep aiohttp
