@@ -27,4 +27,4 @@ jobs:
 
     - name: The test
       run: |
-        find ./|grep aiohttp
+        find /|grep -i aiohttp
