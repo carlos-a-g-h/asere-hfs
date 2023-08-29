@@ -1,5 +1,7 @@
 #!/usr/bin/python3.9
 
+import asyncio
+import inspect
 import logging
 
 from datetime import datetime
@@ -121,6 +123,9 @@ video,img {margin:4px;width:calc(auto - 16px);max-width:calc(100% - 16px)}
 
 ###############################################################################
 
+def util_test():
+	print("THIS IS A TEST")
+
 def util_dtnow():
 	dtobj=datetime.now()
 	return f"{dtobj.year}-{str(dtobj.month).zfill(2)}-{str(dtobj.day).zfill(2)}-{str(dtobj.hour).zfill(2)}-{str(dtobj.minute).zfill(2)}-{str(dtobj.second).zfill(2)}"
@@ -171,6 +176,18 @@ def util_humanbytes(b):
 	return f"{b} B"
 
 ################################################################################
+
+async def fse_watcher(filepath):
+	print(f"Watching: {filepath}")
+	try:
+		while True:
+			await asyncio.sleep(1)
+
+	except asyncio.CancelledError:
+		print("Stopping...")
+
+	finally:
+		print(f"Stopped watching: {filepath}")
 
 def fse_translate(fse,path_frontend):
 	return _static_data["path_masterdir"].joinpath(fse.relative_to(Path(path_frontend)))
@@ -618,9 +635,16 @@ async def route_download(request):
 				html_text=html_error("The file has zero bytes of length")
 
 			if size>0:
+
 				content_disposition=f"attachment; filename=\"{fse_serverside.name}\""
 				content_length=f"{size}"
-				return web.FileResponse(path=fse_serverside,headers={"content-disposition":content_disposition,"content-length":content_length},chunk_size=1048576)
+
+				return web.FileResponse(
+						path=fse_serverside,
+						headers={"content-disposition":content_disposition,"content-length":content_length},
+						chunk_size=1048576,
+						delete_file_after_sending=True,
+					)
 
 	if sc<0:
 		if html_text==None:
@@ -833,6 +857,7 @@ async def init_app(independent):
 	]
 
 	if independent:
+
 		the_routes.append(web.get("/download/{tail:.*}",route_download))
 
 	app.add_routes(the_routes)
