@@ -10,6 +10,9 @@ from urllib.parse import quote as uquote
 
 from aiohttp import web
 
+# https://stackoverflow.com/questions/34565705/asyncio-and-aiohttp-route-all-urls-paths-to-handler
+# https://dev.to/vearutop/using-nginx-as-a-proxy-to-multiple-unix-sockets-3c7a
+
 ###############################################################################
 
 _date_version="2023-08-23"
@@ -174,6 +177,37 @@ def util_humanbytes(b):
 	if b>u_kb:
 		return f"{round(b/u_kb,2)} K"
 	return f"{b} B"
+
+async def util_subprocess(cmd_line,ret_stcode=True,ret_stdout=True,ret_stderr=True):
+
+	proc=await asyncio.create_subprocess_exec(
+			*cmd_line,
+			stdout={True:asyncio.subprocess.PIPE,False:None}[ret_stdout],
+			stderr={True:asyncio.subprocess.PIPE,False:None}[ret_stderr],
+		)
+
+	print(f"\n- RUN: {cmd_line}\n  PID: {proc.pid}")
+	stdout_raw,stderr_raw=await proc.communicate()
+
+	payload=[]
+	if ret_stcode:
+		payload.append(proc.returncode)
+	if ret_stdout:
+		if stdout_raw:
+			payload.append(stdout_raw.decode())
+		if not stdout_raw:
+			payload.append(None)
+	if ret_stderr:
+		if stderr_raw:
+			payload.append(stderr_raw.decode())
+		if not stderr_raw:
+			payload.append(None)
+
+	if len(payload)==0:
+		return
+	if len(payload)==1:
+		return payload[0]
+	return payload
 
 ################################################################################
 
@@ -461,34 +495,44 @@ def html_info_dir(fse_serverside,yurl_path,prefix_path_appname):
 
 		html_text=f"{html_text}\n{html_text_files}</table></p>"
 
-	if qtty_files>1:
+	if qtty_files>0 or qtty_dirs>0:
 
-		html_text=f"{html_text}\n<h2>Available actions</h2>\n<p>"
+		html_text=f"{html_text}\n<h2>Available action(s)</h2>\n<p>"
 
-		# Normal TXT
+		if qtty_files>1:
 
-		link_action_txt=str(Path("/action/make-txt/").joinpath(path_neutral))
-		if not link_action_txt.endswith("/"):
-			link_action_txt=f"{link_action_txt}/"
+			# Normal TXT
 
-		html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action_txt}\">Download TXT file</a> "
+			link_action=str(Path("/action/make-txt/").joinpath(path_neutral))
+			if not link_action.endswith("/"):
+				link_action=f"{link_action}/"
 
-		# IDM compatible TXT
+			html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action}\">Generate TXT file</a> "
 
-		link_action_txt_idm=str(Path("/action/make-txt-idm/").joinpath(path_neutral))
-		if not link_action_txt_idm.endswith("/"):
-			link_action_txt_idm=f"{link_action_txt_idm}/"
+			# IDM compatible TXT
 
-		html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action_txt_idm}\">Download TXT for IDM</a> "
+			link_action=str(Path("/action/make-txt-idm/").joinpath(path_neutral))
+			if not link_action.endswith("/"):
+				link_action=f"{link_action}/"
 
-		# M3U Playlist
+			html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action}\">Generate TXT file for IDM</a> "
 
-		if qtty_files_av>1:
-			link_action_m3u=str(Path("/action/make-m3u/").joinpath(path_neutral))
-			if not link_action_m3u.endswith("/"):
-				link_action_m3u=f"{link_action_m3u}/"
+			# M3U Playlist
 
-			html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action_m3u}\">Download M3U Playlist</a> "
+			if qtty_files_av>1:
+				link_action=str(Path("/action/make-m3u/").joinpath(path_neutral))
+				if not link_action.endswith("/"):
+					link_action=f"{link_action}/"
+
+				html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action}\">Generate M3U Playlist</a> "
+
+		# TAR archiver
+
+		link_action=str(Path("/action/tardir/").joinpath(path_neutral))
+		if not link_action.endswith("/"):
+			link_action=f"{link_action}/"
+
+		html_text=f"{html_text}\n<a class=\"menu\" href=\"{prefix_path_appname}{link_action}\">Download as a TAR file</a> "
 
 		html_text=f"{html_text.strip()}</p>"
 
@@ -553,6 +597,27 @@ def action_txtmaker(yurl,fse_neutral,fse_given,atype=0):
 			txt=f"{txt}\t{fse.name}"
 
 	return txt.strip()
+
+async def action_tardir(fse):
+
+	# tar -cf "/absolute/path/the.tar" -C "/parent/directory/" "DirectoryName"
+
+	fse_tar_dir=_static_data["path_appdir"]
+	fse_tar=fse_tar_dir.joinpath(f"{util_dtnow()}.tar")
+
+	line=[
+		"tar","-cf",
+		str(fse_tar),
+		"-C",str(fse.parent),
+		fse.name,
+	]
+
+	results=await util_subprocess(line,ret_stdout=False)
+	print(results)
+	if not results[0]==0:
+		return None,results[1]
+
+	return fse_tar,None
 
 ###############################################################################
 
@@ -643,7 +708,6 @@ async def route_download(request):
 						path=fse_serverside,
 						headers={"content-disposition":content_disposition,"content-length":content_length},
 						chunk_size=1048576,
-						delete_file_after_sending=True,
 					)
 
 	if sc<0:
@@ -659,26 +723,56 @@ async def route_action(request):
 
 	fse_serverside=None
 
-	pattern="/action/make-txt/"
-	if yurl.path.startswith(pattern):
+	pattern=""
+	for pattern in ("/action/make-txt/","/action/make-txt-idm/","/action/make-m3u/","/action/tardir/"):
+		if not yurl.path.startswith(pattern):
+			continue
+
 		fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
+		if not fse_serverside==None:
+			break
+
+	#pattern="/action/make-txt/"
+	#if yurl.path.startswith(pattern):
+	#	fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
+
+	#if not fse_serverside:
+	#	pattern="/action/make-txt-idm/"
+	#	if yurl.path.startswith(pattern):
+	#		fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
+
+	#if not fse_serverside:
+	#	pattern="/action/make-m3u/"
+	#	if yurl.path.startswith(pattern):
+	#		fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
+
+	#if not fse_serverside:
+	#	pattern="/action/make-m3u/"
+	#	if yurl.path.startswith(pattern):
+	#		fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
 
 	if not fse_serverside:
-		pattern="/action/make-txt-idm/"
-		if yurl.path.startswith(pattern):
-			fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
+		return web.Response(body=html_error("Path or action not valid","???"),content_type="text/html",charset="utf-8",status=404)
 
-	if not fse_serverside:
-		pattern="/action/make-m3u/"
-		if yurl.path.startswith(pattern):
-			fse_serverside=fse_validate(fse_translate(yurl_path,pattern))
-
-	if not fse_serverside:
-		return web.Response(body=html_error("The path does not exist","???"),content_type="text/html",charset="utf-8",status=404)
-
-	if pattern in ("/action/make-txt/","/action/make-txt-idm/","/action/make-m3u/"):
+	if pattern in ("/action/make-txt/","/action/make-txt-idm/","/action/make-m3u/","/action/tardir/"):
 		if not fse_serverside.is_dir():
 			return web.Response(body=html_error("The path is not a directory","???"),content_type="text/html",charset="utf-8",status=403)
+
+	if pattern=="/action/tardir/":
+		fse_tmp,msg_err=await action_tardir(fse_serverside)
+		if fse_tmp==None:
+			msg={True:"Unknown error",False:msg_err}[msg_err==None]
+			return web.Response(body=html_error(msg,"TAR archiver"),content_type="text/html",charset="utf-8",status=403)
+
+		content_disposition=f"attachment; filename=\"{fse_serverside.name}.tar\""
+		content_length=f"{fse_tmp.stat().st_size}"
+
+		return web.FileResponse(
+				path=fse_tmp,
+				headers={"content-disposition":content_disposition,"content-length":content_length},
+				chunk_size=1048576,
+				delete_file_after_sending=True,
+			)
 
 	if pattern in ("/action/make-txt/","/action/make-txt-idm/","/action/make-m3u/"):
 
@@ -701,12 +795,12 @@ async def route_action(request):
 
 		content_disposition=f"attachment; filename=\"{file_stem}.{file_sfx}\""
 
-		return web.Response(text=txt,headers={"content-disposition":content_disposition},content_type="text/plain",status=200)
+		return web.Response(
+				text=txt,headers={"content-disposition":content_disposition},
+				content_type="text/plain",status=200
+			)
 
 ###############################################################################
-
-# https://stackoverflow.com/questions/34565705/asyncio-and-aiohttp-route-all-urls-paths-to-handler
-# https://dev.to/vearutop/using-nginx-as-a-proxy-to-multiple-unix-sockets-3c7a
 
 def init_arguments(data_raw):
 
@@ -767,9 +861,7 @@ def init_arg_socket(arg_raw,arg_port):
 		return None,"Cannot use '--socket' with --port"
 
 	the_path=Path(arg_raw.strip()).resolve()
-
 	the_path.parent.mkdir(exist_ok=True,parents=True)
-
 	if the_path.exists():
 		return None,"Cannot use the specified file as the socket, delete it, move it somewhere else, etc..."
 
@@ -854,6 +946,7 @@ async def init_app(independent):
 		web.get("/action/make-m3u/{tail:.*}",route_action),
 		web.get("/action/make-txt/{tail:.*}",route_action),
 		web.get("/action/make-txt-idm/{tail:.*}",route_action),
+		web.get("/action/tardir/{tail:.*}",route_action),
 	]
 
 	if independent:
@@ -920,7 +1013,7 @@ if __name__=="__main__":
 	print(f"\n{msg}\n")
 
 	# Adding to static data dict
-	_static_data.update({"path_masterdir":the_master})
+	_static_data.update({"path_appdir":the_appdir,"path_masterdir":the_master})
 	if not the_slave==None:
 		_static_data.update({"path_slavedir":the_slave})
 	if not the_proxy_appname==None:

@@ -78,9 +78,14 @@ class FileResponse(StreamResponse):
                 break
             chunk = await loop.run_in_executor(None, fobj.read, min(chunk_size, count))
 
-        print("_sendfile_fallback(): 0")
+        # print("_sendfile_fallback(): await writer.drain()")
         await writer.drain()
-        print("_sendfile_fallback(): 1 ret")
+
+        if self.delete_file_after_sending:
+            print(f"\n- Deleting from the filesystem:\n  {self._path.resolve()}\n")
+            self._path.unlink()
+
+        # print("_sendfile_fallback(): return writer")
         return writer
 
     async def _sendfile(
@@ -103,15 +108,14 @@ class FileResponse(StreamResponse):
             print("_sendfile(): 1 ret")
             return await self._sendfile_fallback(writer, fobj, offset, count)
 
-
-        print("_sendfile(): 2")
+        # print("_sendfile(): await super().write_eof()")
         await super().write_eof()
-        print("_sendfile(): 3 ret")
 
         if self.delete_file_after_sending:
             print(f"\n- Deleting from the filesystem:\n  {self._path.resolve()}\n")
             self._path.unlink()
 
+        # print("_sendfile(): return writer")
         return writer
 
     async def prepare(self, request: "BaseRequest") -> Optional[AbstractStreamWriter]:
